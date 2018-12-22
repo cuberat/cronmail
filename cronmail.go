@@ -95,11 +95,13 @@ func main() {
         os.Exit(-1)
     }
 
-    err = send_mail(conf_data, smtp_server, subject, from, to, out_str, list_id)
-    if err != nil {
-        fmt.Fprintf(os.Stderr, "couldn't send email: %s\n\nOutput:\n%s\n",
-            err, out_str)
-        os.Exit(-1)
+    if out_str != "" {
+        err = send_mail(conf_data, smtp_server, subject, from, to, out_str, list_id)
+        if err != nil {
+            fmt.Fprintf(os.Stderr, "couldn't send email: %s\n\nOutput:\n%s\n",
+                err, out_str)
+            os.Exit(-1)
+        }
     }
 }
 
@@ -136,7 +138,9 @@ func send_mail(conf_data map[string]string, smtp_server, subject, from, to,
         from, ok = conf_data["mailfrom"]
         if !ok {
             me, _ := user.Current()
-            from = me.Username
+            host, _ := os.Hostname()
+
+            from = fmt.Sprintf("<%s@%s>", me.Username, host)
         }
     }
 
