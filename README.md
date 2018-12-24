@@ -16,15 +16,19 @@ go install -i github.com/cuberat/go-cronmail/cronmail
 ## Getting Started
 
 ```bash
-Usage: cronmail [options] command ...
+Usage: ./cronmail [options] command ...
 
 Options:
   -conf file
     	Configuration file. Defaults to ~/etc/cronmail.conf
+  -debug
+    	Print out configuration information.
   -from address
     	From address to use for message.
   -listid List-Id
     	List-Id value to insert.
+  -prependcmd
+    	Prepend the command-line to the email.
   -server server:port
     	Override SMTP server:port in configuration file
   -subject string
@@ -33,7 +37,6 @@ Options:
     	Recipients addresses for message. Defaults to the value of the MAILTO environment variable.
 
 \# Note that options may start with either "-" or "--".
-
 ```
 
 
