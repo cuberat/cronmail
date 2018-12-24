@@ -47,6 +47,12 @@ import (
     "syscall"
 )
 
+type Ctx struct {
+    cmdline string
+    prepend_cmd bool
+    do_debug bool
+}
+
 func main() {
     var (
         conf_file string
@@ -55,6 +61,7 @@ func main() {
         subject string
         to, from string
         list_id string
+        prepend_cmd bool
     )
 
     flag.StringVar(&conf_file, "conf", "", "Configuration `file`. Defaults to ~/etc/cronmail.conf")
@@ -63,6 +70,7 @@ func main() {
     flag.StringVar(&from, "from", "", "From `address` to use for message.")
     flag.StringVar(&to, "to", "", "Recipients `addresses` for message. Defaults to the value of the MAILTO environment variable.")
     flag.StringVar(&list_id, "listid", "", "`List-Id` value to insert.")
+    flag.BoolVar(&prepend_cmd, "prependcmd", false, "Prepend the command-line to the email.")
     flag.BoolVar(&do_debug, "debug", false, "Print out configuration information.")
 
     // FIXME: add info about conf file
@@ -75,6 +83,11 @@ func main() {
     flag.Parse()
 
     args := flag.Args()
+
+    ctx := new(Ctx)
+    ctx.prepend_cmd = prepend_cmd
+    ctx.cmdline = strings.Join(args, " ")
+    ctx.do_debug = do_debug
 
     if subject == "" {
         subject = strings.Join(args, " ")
@@ -100,8 +113,8 @@ func main() {
                     err, out_str)
             }
 
-            err = send_mail(conf_data, smtp_server, subject, from, to, out_str,
-                list_id, do_debug)
+            err = send_mail(ctx, conf_data, smtp_server, subject, from, to,
+                out_str, list_id)
             if err != nil {
                 fmt.Fprintf(os.Stderr, "cronmail: couldn't send email: %s\n\nOutput:\n%s\n",
                     err, out_str)
@@ -116,8 +129,8 @@ func main() {
         }
     }
 
-    err = send_mail(conf_data, smtp_server, subject, from, to, out_str, list_id,
-        do_debug)
+    err = send_mail(ctx, conf_data, smtp_server, subject, from, to, out_str,
+        list_id)
     if err != nil {
         fmt.Fprintf(os.Stderr, "cronmail: couldn't send email: %s\n\nOutput:\n%s\n",
             err, out_str)
@@ -127,8 +140,8 @@ func main() {
     os.Exit(0)
 }
 
-func send_mail(conf_data map[string]string, smtp_server, subject, from, to,
-    body, list_id string, do_debug bool) (error) {
+func send_mail(ctx *Ctx, conf_data map[string]string, smtp_server, subject,
+    from, to, body, list_id string) (error) {
 
     var (
         auth_user, auth_passwd string
@@ -140,6 +153,10 @@ func send_mail(conf_data map[string]string, smtp_server, subject, from, to,
 
     if body == "" {
         return nil
+    }
+
+    if ctx.prepend_cmd {
+        body = fmt.Sprintf("%s\n\n%s", ctx.cmdline, body)
     }
 
     if smtp_server == "" {
@@ -220,7 +237,7 @@ func send_mail(conf_data map[string]string, smtp_server, subject, from, to,
         // auth = smtp.CRAMMD5Auth(auth_user, auth_passwd)
     }
 
-    if do_debug {
+    if ctx.do_debug {
         fmt.Fprintf(os.Stderr, "server: %s\n", smtp_server)
         fmt.Fprintf(os.Stderr, "auth user: %s\n", auth_user)
         auth_passwd_to_print := "XXXXXXXXXX"
