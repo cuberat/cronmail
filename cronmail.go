@@ -44,11 +44,13 @@ import (
     "os/exec"
     "os/user"
     "strings"
+    "syscall"
 )
 
 func main() {
     var (
         conf_file string
+        do_debug bool
         smtp_server string
         subject string
         to, from string
@@ -56,11 +58,12 @@ func main() {
     )
 
     flag.StringVar(&conf_file, "conf", "", "Configuration `file`. Defaults to ~/etc/cronmail.conf")
-    flag.StringVar(&smtp_server, "server", "", "Override SMTP `server` in configuration file")
+    flag.StringVar(&smtp_server, "server", "", "Override SMTP `server:port` in configuration file")
     flag.StringVar(&subject, "subject", "", "Subject of message. Defaults to command line.")
     flag.StringVar(&from, "from", "", "From `address` to use for message.")
     flag.StringVar(&to, "to", "", "Recipients `addresses` for message. Defaults to the value of the MAILTO environment variable.")
     flag.StringVar(&list_id, "listid", "", "`List-Id` value to insert.")
+    flag.BoolVar(&do_debug, "debug", false, "Print out configuration information.")
 
     // FIXME: add info about conf file
     flag.Usage = func() {
@@ -77,11 +80,6 @@ func main() {
         subject = strings.Join(args, " ")
     }
 
-    if conf_file == "" {
-        me, _ := user.Current()
-        conf_file = fmt.Sprintf("%s/etc/cronmail.conf", me.HomeDir)
-    }
-
     conf_data, err := load_conf(conf_file, "cronmail")
     if err != nil {
         fmt.Fprintf(os.Stderr, "failed to load configuration file %s: %s\n",
@@ -91,22 +89,46 @@ func main() {
 
     out_str, err := run_cmd(args)
     if err != nil {
-        fmt.Fprintf(os.Stderr, "cmd failed (%s) : %s\n", strings.Join(args, " "), err)
-        os.Exit(-1)
-    }
+        if exit_err, ok := err.(*exec.ExitError); ok {
+            exit_status := int(-1)
+            if ws, ok := exit_err.ProcessState.Sys().(syscall.WaitStatus); ok {
+                exit_status = ws.ExitStatus()
+            } else {
+                fmt.Fprintf(os.Stderr, "cronmail: couldn't get exit status: %s\n",
+                    err)
+                out_str = fmt.Sprintf("cronmail: couldn't get exit status: %s\n\n%s",
+                    err, out_str)
+            }
 
-    if out_str != "" {
-        err = send_mail(conf_data, smtp_server, subject, from, to, out_str, list_id)
-        if err != nil {
-            fmt.Fprintf(os.Stderr, "couldn't send email: %s\n\nOutput:\n%s\n",
-                err, out_str)
+            err = send_mail(conf_data, smtp_server, subject, from, to, out_str,
+                list_id, do_debug)
+            if err != nil {
+                fmt.Fprintf(os.Stderr, "cronmail: couldn't send email: %s\n\nOutput:\n%s\n",
+                    err, out_str)
+                os.Exit(-1)
+            }
+
+            os.Exit(exit_status)
+        } else {
+            fmt.Fprintf(os.Stderr, "cronmail: could not run cmd (%s) : %s\n",
+                strings.Join(args, " "), err)
             os.Exit(-1)
         }
     }
+
+    err = send_mail(conf_data, smtp_server, subject, from, to, out_str, list_id,
+        do_debug)
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "cronmail: couldn't send email: %s\n\nOutput:\n%s\n",
+            err, out_str)
+        os.Exit(-1)
+    }
+
+    os.Exit(0)
 }
 
 func send_mail(conf_data map[string]string, smtp_server, subject, from, to,
-    body, list_id string) (error) {
+    body, list_id string, do_debug bool) (error) {
 
     var (
         auth_user, auth_passwd string
@@ -115,6 +137,10 @@ func send_mail(conf_data map[string]string, smtp_server, subject, from, to,
         smtp_hostname string
         extra_headers string
     )
+
+    if body == "" {
+        return nil
+    }
 
     if smtp_server == "" {
         smtp_server, ok = conf_data["server"]
@@ -129,7 +155,8 @@ func send_mail(conf_data map[string]string, smtp_server, subject, from, to,
             to, ok = conf_data["mailto"]
             if !ok {
                 me, _ := user.Current()
-                to = me.Username
+                host, _ := os.Hostname()
+                to = fmt.Sprintf("<%s@%s>", me.Username, host)
             }
         }
     }
@@ -155,9 +182,11 @@ func send_mail(conf_data map[string]string, smtp_server, subject, from, to,
         }
     }
 
+    env_from := from_addr_obj.Address
+
     to_addr_objs, err := mail.ParseAddressList(to)
     if err != nil {
-        return fmt.Errorf("couldn't parse to address(es): %s", err)
+        return fmt.Errorf("couldn't parse to address(es) '%s': %s", to, err)
     }
 
     to_addrs := make([]string, 0, len(to_addr_objs))
@@ -191,7 +220,26 @@ func send_mail(conf_data map[string]string, smtp_server, subject, from, to,
         // auth = smtp.CRAMMD5Auth(auth_user, auth_passwd)
     }
 
-    err = smtp.SendMail(smtp_server, auth, from_addr_obj.Address, to_addrs, []byte(msg_str))
+    if do_debug {
+        fmt.Fprintf(os.Stderr, "server: %s\n", smtp_server)
+        fmt.Fprintf(os.Stderr, "auth user: %s\n", auth_user)
+        auth_passwd_to_print := "XXXXXXXXXX"
+        if auth_passwd == "" {
+            auth_passwd_to_print = ""
+        }
+        fmt.Fprintf(os.Stderr, "auth passwd: %s\n", auth_passwd_to_print)
+
+        fmt.Fprintf(os.Stderr, "from address (envelope): %s\n", env_from)
+        fmt.Fprintf(os.Stderr, "from address (header): %s\n", from)
+        fmt.Fprintf(os.Stderr, "to (envelope): %+v\n", to_addrs)
+        fmt.Fprintf(os.Stderr, "to (header): %s\n", to)
+        fmt.Fprintf(os.Stderr, "subject: %s\n", subject)
+        os.Exit(0)
+    }
+
+    // /usr/sbin/sendmail -i -f env_from to_addrs...
+
+    err = smtp.SendMail(smtp_server, auth, env_from, to_addrs, []byte(msg_str))
 
     return err
 }
@@ -232,6 +280,16 @@ func run_cmd(args []string) (string, error) {
 }
 
 func load_conf(conf_file, section string) (map[string]string, error) {
+    if conf_file == "" {
+        me, _ := user.Current()
+        conf_file = fmt.Sprintf("%s/etc/cronmail.conf", me.HomeDir)
+        _, err := os.Stat(conf_file)
+        if err != nil {
+            // doesn't exist
+            return nil, nil
+        }
+    }
+
     conf_data, err := ini.LoadFromFile(conf_file)
     if err != nil {
         return nil, err
