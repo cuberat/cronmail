@@ -79,6 +79,7 @@ func main() {
 
     // FIXME: add info about conf file
     flag.Usage = func() {
+        fmt.Fprintf(flag.CommandLine.Output(), "cronmail version %s\n\n", version)
         fmt.Fprintf(flag.CommandLine.Output(),
             "Usage: %s [options] command ...\n\nOptions:\n", os.Args[0])
         flag.PrintDefaults()
