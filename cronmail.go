@@ -114,7 +114,7 @@ func main() {
             }
 
             err = send_mail(ctx, conf_data, smtp_server, subject, from, to,
-                out_str, list_id)
+                out_str, list_id, exit_status)
             if err != nil {
                 fmt.Fprintf(os.Stderr, "cronmail: couldn't send email: %s\n\nOutput:\n%s\n",
                     err, out_str)
@@ -130,7 +130,7 @@ func main() {
     }
 
     err = send_mail(ctx, conf_data, smtp_server, subject, from, to, out_str,
-        list_id)
+        list_id, 0)
     if err != nil {
         fmt.Fprintf(os.Stderr, "cronmail: couldn't send email: %s\n\nOutput:\n%s\n",
             err, out_str)
@@ -141,7 +141,7 @@ func main() {
 }
 
 func send_mail(ctx *Ctx, conf_data map[string]string, smtp_server, subject,
-    from, to, body, list_id string) (error) {
+    from, to, body, list_id string, exit_status int) (error) {
 
     var (
         auth_user, auth_passwd string
@@ -150,6 +150,11 @@ func send_mail(ctx *Ctx, conf_data map[string]string, smtp_server, subject,
         smtp_hostname string
         extra_headers string
     )
+
+    if exit_status != 0 {
+        body = fmt.Sprintf("==> Process exited with non-zero exit status (%d)\n\n%s",
+            exit_status, body)
+    }
 
     if body == "" {
         return nil
@@ -288,11 +293,8 @@ func run_cmd(args []string) (string, error) {
     cmd.Stderr = writer
 
     err = cmd.Run()
-    if err != nil {
-        return "", err
-    }
 
-    return writer.String(), nil
+    return writer.String(), err
     
 }
 
