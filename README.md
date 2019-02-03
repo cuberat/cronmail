@@ -35,6 +35,8 @@ Options:
     	Subject of message. Defaults to command line.
   -to addresses
     	Recipients addresses for message. Defaults to the value of the MAILTO environment variable.
+  -version
+    	Print the version of cronmail.
 
 \# Note that options may start with either "-" or "--".
 ```
