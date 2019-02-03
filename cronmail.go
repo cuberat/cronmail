@@ -54,6 +54,8 @@ type Ctx struct {
 }
 
 func main() {
+    const version = "1.0"
+
     var (
         conf_file string
         do_debug bool
@@ -62,6 +64,7 @@ func main() {
         to, from string
         list_id string
         prepend_cmd bool
+        print_version bool
     )
 
     flag.StringVar(&conf_file, "conf", "", "Configuration `file`. Defaults to ~/etc/cronmail.conf")
@@ -72,6 +75,7 @@ func main() {
     flag.StringVar(&list_id, "listid", "", "`List-Id` value to insert.")
     flag.BoolVar(&prepend_cmd, "prependcmd", false, "Prepend the command-line to the email.")
     flag.BoolVar(&do_debug, "debug", false, "Print out configuration information.")
+    flag.BoolVar(&print_version, "version", false, "Print the version of cronmail.")
 
     // FIXME: add info about conf file
     flag.Usage = func() {
@@ -83,6 +87,11 @@ func main() {
     flag.Parse()
 
     args := flag.Args()
+
+    if print_version {
+        fmt.Fprintf(os.Stdout, "cronmail version %s\n", version)
+        os.Exit(0)
+    }
 
     ctx := new(Ctx)
     ctx.prepend_cmd = prepend_cmd
