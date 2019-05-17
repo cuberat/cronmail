@@ -1,4 +1,4 @@
-// Copyright (c) 2018 Don Owens <don@regexguy.com>.  All rights reserved.
+// Copyright (c) 2018-2019 Don Owens <don@regexguy.com>.  All rights reserved.
 //
 // This software is released under the BSD license:
 //
@@ -65,6 +65,7 @@ func main() {
         list_id string
         prepend_cmd bool
         print_version bool
+        out_size_limit int
     )
 
     flag.StringVar(&conf_file, "conf", "", "Configuration `file`. Defaults to ~/etc/cronmail.conf")
@@ -76,6 +77,7 @@ func main() {
     flag.BoolVar(&prepend_cmd, "prependcmd", false, "Prepend the command-line to the email.")
     flag.BoolVar(&do_debug, "debug", false, "Print out configuration information.")
     flag.BoolVar(&print_version, "version", false, "Print the version of cronmail.")
+    flag.IntVar(&out_size_limit, "outlimit", 1000000, "Maximum size of the output stored from the command to send via email.")
 
     // FIXME: add info about conf file
     flag.Usage = func() {
@@ -110,7 +112,7 @@ func main() {
         os.Exit(-1)
     }
 
-    out_str, err := run_cmd(args)
+    out_str, err := run_cmd(args, out_size_limit)
     if err != nil {
         if exit_err, ok := err.(*exec.ExitError); ok {
             exit_status := int(-1)
@@ -276,7 +278,7 @@ func send_mail(ctx *Ctx, conf_data map[string]string, smtp_server, subject,
     return err
 }
 
-func run_cmd(args []string) (string, error) {
+func run_cmd(args []string, out_size_limit int) (string, error) {
     var cmd_args []string
 
     if len(args) == 0 {
@@ -297,7 +299,7 @@ func run_cmd(args []string) (string, error) {
 
     cmd := exec.Command(cmd_path, cmd_args...)
 
-    writer := new(strings.Builder)
+    writer := NewStringWriter(out_size_limit)
 
     cmd.Stdout = writer
     cmd.Stderr = writer
@@ -305,7 +307,6 @@ func run_cmd(args []string) (string, error) {
     err = cmd.Run()
 
     return writer.String(), err
-    
 }
 
 func load_conf(conf_file, section string) (map[string]string, error) {
@@ -333,4 +334,63 @@ func load_conf(conf_file, section string) (map[string]string, error) {
     }
 
     return cronmail_conf, nil
+}
+
+// To be used as an io.Writer, like strings.Builder, but truncate if
+// too much data is written.
+type StringWriter struct {
+    writer *strings.Builder
+    max_len int
+    cur_len int
+}
+
+func NewStringWriter(size int) (*StringWriter) {
+    sw := new(StringWriter)
+    sw.writer = new(strings.Builder)
+    sw.max_len = size
+    sw.cur_len = 0
+
+    return sw
+}
+
+func (sw *StringWriter) Write(p []byte) (int, error) {
+    if sw.cur_len >= sw.max_len {
+        // Fake it
+        return len(p), nil
+    }
+
+    to_write := p
+    if sw.cur_len + len(p) > sw.max_len {
+        to_write = p[0:sw.max_len - sw.cur_len]
+    }
+
+    amt_written, err := sw.writer.Write(to_write)
+    if err != nil {
+        sw.cur_len += amt_written
+    }
+
+    return len(p), err
+}
+
+func (sw *StringWriter) WriteString(s string) (int, error) {
+    if sw.cur_len >= sw.max_len {
+        // Fake it
+        return len(s), nil
+    }
+
+    to_write := s
+    if sw.cur_len + len(s) > sw.max_len {
+        to_write = s[0:sw.max_len - sw.cur_len]
+    }
+
+    amt_written, err := sw.writer.WriteString(to_write)
+    if err != nil {
+        sw.cur_len += amt_written
+    }
+
+    return len(s), err
+}
+
+func (sw *StringWriter) String() string {
+    return sw.writer.String()
 }
