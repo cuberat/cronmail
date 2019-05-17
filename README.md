@@ -27,6 +27,9 @@ Options:
     	From address to use for message.
   -listid List-Id
     	List-Id value to insert.
+  -outlimit output_limit
+    	Maximum size in bytes of output from command to send in email. Defaults
+    	to 1 MB.
   -prependcmd
     	Prepend the command-line to the email.
   -server server:port
@@ -40,7 +43,3 @@ Options:
 
 \# Note that options may start with either "-" or "--".
 ```
-
-
-
-
